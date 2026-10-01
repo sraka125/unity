@@ -37,10 +37,22 @@ public class WorldChunkGenerator : MonoBehaviour
     [Header("Props Per Chunk")]
     [SerializeField] private int minTables = 1;
     [SerializeField] private int maxTables = 3;
-    [SerializeField] private float tableSurfaceOffset = 0.95f;
     [SerializeField] private float edgePadding = 4f;
     [SerializeField] private bool placeAmmoOnTables = true;
     [SerializeField] private float looseAmmoChance = 0.35f;
+
+    [Header("Ground Placement")]
+    [SerializeField] private int placementAttempts = 32;
+    [SerializeField, Range(0f, 90f)] private float maxGroundSlope = 32f;
+    [SerializeField] private float slopeSampleRadius = 1f;
+    [SerializeField] private float minTableSpacing = 7f;
+    [SerializeField] private float propSink = 0.03f;
+    [SerializeField, Range(0f, 1f)] private float alignToNormal = 0.6f;
+    [SerializeField] private bool sleepPropsOnSpawn = true;
+
+    [Header("Ammo Placement")]
+    [SerializeField] private float ammoSurfaceOffset = 0.12f;
+    [SerializeField] private float ammoSpread = 0.4f;
 
     readonly Dictionary<Vector2Int, Chunk> chunks = new Dictionary<Vector2Int, Chunk>();
     readonly List<Vector2Int> toRemove = new List<Vector2Int>();
@@ -58,25 +70,18 @@ public class WorldChunkGenerator : MonoBehaviour
         public GameObject Root;
         public Terrain Terrain;
         public System.Random Rng;
+        public Vector3 Origin;
         public int TableCount;
         public bool LooseAmmo;
+        public readonly List<Vector3> Tables = new List<Vector3>();
     }
 
     void Start()
     {
-        if (!player)
-        {
-            SUPERCharacterAIO character = FindFirstObjectByType<SUPERCharacterAIO>();
-            if (character)
-                player = character.transform;
-        }
+        player = ResolveLocalPlayer();
 
         if (!player)
-        {
-            Debug.LogWarning("WorldChunkGenerator: player not found.");
-            enabled = false;
             return;
-        }
 
         if (disableOnStart != null)
         {
@@ -99,7 +104,13 @@ public class WorldChunkGenerator : MonoBehaviour
 
     void Update()
     {
-        if (!initialized || !player)
+        if (!initialized)
+            return;
+
+        if (!player || !player.gameObject.activeInHierarchy)
+            player = ResolveLocalPlayer();
+
+        if (!player)
             return;
 
         Vector2Int center = WorldToChunk(player.position);
@@ -109,6 +120,23 @@ public class WorldChunkGenerator : MonoBehaviour
         lastCenter = center;
         hasCenter = true;
         RebuildChunks(center);
+    }
+
+    Transform ResolveLocalPlayer()
+    {
+        if (NetGuard.SessionActive)
+        {
+            Mirror.NetworkIdentity local = Mirror.NetworkClient.localPlayer;
+
+            if (local)
+                return local.transform;
+        }
+
+        if (player)
+            return player;
+
+        SUPERCharacterAIO character = FindFirstObjectByType<SUPERCharacterAIO>();
+        return character ? character.transform : null;
     }
 
     void OnDestroy()
@@ -191,7 +219,40 @@ public class WorldChunkGenerator : MonoBehaviour
 
     public float GetHeightAt(float worldX, float worldZ)
     {
+        Terrain terrain = GetTerrainAt(WorldToChunk(new Vector3(worldX, 0f, worldZ)));
+        float sampled = SampleTerrainHeight(terrain, worldX, worldZ);
+
+        if (sampled > float.NegativeInfinity)
+            return sampled;
+
         return groundY + SampleHeightNormalized(worldX, worldZ) * terrainVerticalSize;
+    }
+
+    float SampleTerrainHeight(Terrain terrain, float worldX, float worldZ)
+    {
+        if (!terrain || !terrain.terrainData)
+            return float.NegativeInfinity;
+
+        Vector3 terrainPos = terrain.transform.position;
+        Vector3 size = terrain.terrainData.size;
+
+        float u = (worldX - terrainPos.x) / size.x;
+        float v = (worldZ - terrainPos.z) / size.z;
+
+        if (u < 0f || u > 1f || v < 0f || v > 1f)
+            return float.NegativeInfinity;
+
+        return terrainPos.y + terrain.terrainData.GetInterpolatedHeight(u, v);
+    }
+
+    Vector3 GetTerrainNormal(Terrain terrain, float worldX, float worldZ, float radius)
+    {
+        float left = GetHeightAt(worldX - radius, worldZ);
+        float right = GetHeightAt(worldX + radius, worldZ);
+        float back = GetHeightAt(worldX, worldZ - radius);
+        float front = GetHeightAt(worldX, worldZ + radius);
+
+        return new Vector3(left - right, radius * 2f, back - front).normalized;
     }
 
     Chunk CreateChunk(Vector2Int coord)
@@ -212,15 +273,16 @@ public class WorldChunkGenerator : MonoBehaviour
             Root = root,
             Terrain = terrain,
             Rng = rng,
+            Origin = origin,
             TableCount = tableCount,
             LooseAmmo = looseAmmo
         };
 
         for (int i = 0; i < tableCount; i++)
-            PlaceTableWithAmmo(root.transform, rng);
+            PlaceTableWithAmmo(chunk, rng);
 
         if (looseAmmo)
-            PlaceLooseAmmo(root.transform, rng);
+            PlaceLooseAmmo(chunk, rng);
 
         return chunk;
     }
@@ -349,44 +411,148 @@ public class WorldChunkGenerator : MonoBehaviour
         return runtimeLayer;
     }
 
-    void PlaceTableWithAmmo(Transform parent, System.Random rng)
+    void PlaceTableWithAmmo(Chunk chunk, System.Random rng)
     {
         if (!tablePrefab) { return; }
 
-        Vector3 pos = RandomPointInChunk(rng);
-        Quaternion rot = Quaternion.Euler(0f, (float)rng.NextDouble() * 360f, 0f);
+        if (!TryFindGroundSpot(chunk.Origin, chunk, rng, minTableSpacing, out Vector3 pos, out Vector3 normal))
+            return;
 
-        GameObject table = Instantiate(tablePrefab, pos, rot, parent);
+        Quaternion rot = BuildPlacementRotation(normal, (float)rng.NextDouble() * 360f);
+
+        GameObject table = Instantiate(tablePrefab, pos, rot, chunk.Root.transform);
         table.name = "Table";
+
+        if (sleepPropsOnSpawn)
+            SleepBody(table);
+
+        chunk.Tables.Add(pos);
 
         if (!placeAmmoOnTables || !ammoPrefab)
             return;
 
-        Vector3 ammoPos = pos + Vector3.up * tableSurfaceOffset;
-        ammoPos += new Vector3(
-            ((float)rng.NextDouble() - 0.5f) * 0.4f,
-            0f,
-            ((float)rng.NextDouble() - 0.5f) * 0.4f);
+        float topY = GetHighestPoint(table, pos);
+        Vector3 ammoPos = new Vector3(
+            pos.x + ((float)rng.NextDouble() - 0.5f) * ammoSpread,
+            topY + ammoSurfaceOffset,
+            pos.z + ((float)rng.NextDouble() - 0.5f) * ammoSpread);
 
-        GameObject ammo = Instantiate(ammoPrefab, ammoPos, Quaternion.identity, parent);
+        GameObject ammo = Instantiate(ammoPrefab, ammoPos, Quaternion.identity, chunk.Root.transform);
         ammo.name = "AmmoOnTable";
     }
 
-    void PlaceLooseAmmo(Transform parent, System.Random rng)
+    void PlaceLooseAmmo(Chunk chunk, System.Random rng)
     {
         if (!ammoPrefab) { return; }
 
-        Vector3 pos = RandomPointInChunk(rng) + Vector3.up * 0.2f;
-        Instantiate(ammoPrefab, pos, Quaternion.identity, parent).name = "AmmoLoose";
+        if (!TryFindGroundSpot(chunk.Origin, chunk, rng, 1.5f, out Vector3 pos, out _))
+            return;
+
+        Vector3 ammoPos = new Vector3(pos.x, GetHeightAt(pos.x, pos.z) + ammoSurfaceOffset, pos.z);
+        Instantiate(ammoPrefab, ammoPos, Quaternion.identity, chunk.Root.transform).name = "AmmoLoose";
     }
 
-    Vector3 RandomPointInChunk(System.Random rng)
+    bool TryFindGroundSpot(Vector3 origin, Chunk chunk, System.Random rng, float spacing, out Vector3 spot, out Vector3 normal)
     {
+        spot = Vector3.zero;
+        normal = Vector3.up;
+
         float min = edgePadding;
         float max = Mathf.Max(edgePadding, chunkSize - edgePadding);
-        float x = Mathf.Lerp(min, max, (float)rng.NextDouble());
-        float z = Mathf.Lerp(min, max, (float)rng.NextDouble());
-        return new Vector3(x, GetHeightAt(x, z), z);
+        Vector3 best = Vector3.zero;
+        float bestSlope = float.PositiveInfinity;
+        bool hasBest = false;
+
+        for (int attempt = 0; attempt < placementAttempts; attempt++)
+        {
+            float localX = Mathf.Lerp(min, max, (float)rng.NextDouble());
+            float localZ = Mathf.Lerp(min, max, (float)rng.NextDouble());
+            float worldX = origin.x + localX;
+            float worldZ = origin.z + localZ;
+
+            if (spacing > 0f && !hasBest && IsCrowded(chunk, worldX, worldZ, spacing))
+                continue;
+
+            float height = GetHeightAt(worldX, worldZ);
+
+            if (height == float.NegativeInfinity)
+                continue;
+
+            Vector3 candidateNormal = GetTerrainNormal(chunk.Terrain, worldX, worldZ, slopeSampleRadius);
+            float slope = Vector3.Angle(candidateNormal, Vector3.up);
+            Vector3 candidate = new Vector3(worldX, height, worldZ) - candidateNormal * propSink;
+
+            if (!hasBest || slope < bestSlope)
+            {
+                best = candidate;
+                bestSlope = slope;
+                normal = candidateNormal;
+                hasBest = true;
+            }
+
+            if (slope <= maxGroundSlope)
+            {
+                spot = candidate;
+                normal = candidateNormal;
+                return true;
+            }
+        }
+
+        if (hasBest)
+        {
+            spot = best;
+            return true;
+        }
+
+        return false;
+    }
+
+    bool IsCrowded(Chunk chunk, float worldX, float worldZ, float spacing)
+    {
+        for (int i = 0; i < chunk.Tables.Count; i++)
+        {
+            Vector3 other = chunk.Tables[i];
+            float dx = other.x - worldX;
+            float dz = other.z - worldZ;
+
+            if (dx * dx + dz * dz < spacing * spacing)
+                return true;
+        }
+
+        return false;
+    }
+
+    Quaternion BuildPlacementRotation(Vector3 normal, float yaw)
+    {
+        Quaternion align = Quaternion.FromToRotation(Vector3.up, normal);
+        Quaternion spin = Quaternion.AngleAxis(yaw, normal);
+
+        if (alignToNormal <= 0f)
+            return Quaternion.Euler(0f, yaw, 0f);
+
+        return Quaternion.Slerp(Quaternion.Euler(0f, yaw, 0f), spin * align, alignToNormal);
+    }
+
+    float GetHighestPoint(GameObject instance, Vector3 pivot)
+    {
+        Renderer[] renderers = instance.GetComponentsInChildren<Renderer>();
+        float highest = pivot.y;
+
+        for (int i = 0; i < renderers.Length; i++)
+        {
+            if (renderers[i].bounds.max.y > highest)
+                highest = renderers[i].bounds.max.y;
+        }
+
+        return highest;
+    }
+
+    void SleepBody(GameObject instance)
+    {
+        Rigidbody body = instance.GetComponentInChildren<Rigidbody>();
+
+        if (body && !body.isKinematic)
+            body.Sleep();
     }
 
     void DestroyChunk(Chunk chunk)

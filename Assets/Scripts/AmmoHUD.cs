@@ -9,6 +9,12 @@ public class AmmoHUD : MonoBehaviour
 
     void Start()
     {
+        if (!IsLocalPlayer())
+        {
+            enabled = false;
+            return;
+        }
+
         if (!gun)
             gun = FindFirstObjectByType<SimpleShoot>();
 
@@ -28,6 +34,16 @@ public class AmmoHUD : MonoBehaviour
             gun.OnAmmoChanged -= Refresh;
     }
 
+    bool IsLocalPlayer()
+    {
+        Mirror.NetworkIdentity identity = GetComponentInParent<Mirror.NetworkIdentity>();
+
+        if (!identity || !NetGuard.SessionActive)
+            return true;
+
+        return identity.isLocalPlayer;
+    }
+
     void Refresh()
     {
         if (!ammoText || !gun) { return; }
@@ -38,6 +54,7 @@ public class AmmoHUD : MonoBehaviour
     Text CreateDefaultText()
     {
         Canvas canvas = FindFirstObjectByType<Canvas>();
+
         if (!canvas)
         {
             GameObject canvasGo = new GameObject("AmmoCanvas");

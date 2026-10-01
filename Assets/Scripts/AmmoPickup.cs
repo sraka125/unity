@@ -8,9 +8,11 @@ public class AmmoPickup : MonoBehaviour, ICollectable
     [SerializeField] private bool destroyOnCollect = true;
     [SerializeField] private float spinSpeed = 45f;
     [SerializeField] private float bobHeight = 0.08f;
+    [SerializeField] private bool animateRemotely = true;
 
     private Vector3 startPos;
     private bool collected;
+    private bool syncedToServer;
 
     void Reset()
     {
@@ -30,21 +32,53 @@ public class AmmoPickup : MonoBehaviour, ICollectable
 
     void Update()
     {
-        if (collected) { return; }
+        if (collected || !animateRemotely || !IsLocalRelevant())
+            return;
 
         transform.Rotate(Vector3.up, spinSpeed * Time.deltaTime, Space.World);
         transform.position = startPos + Vector3.up * (Mathf.Sin(Time.time * Mathf.PI) * bobHeight);
     }
 
+    bool IsLocalRelevant()
+    {
+        if (!NetGuard.SessionActive)
+            return true;
+
+        Mirror.NetworkIdentity local = Mirror.NetworkClient.localPlayer;
+
+        return local && Vector3.SqrMagnitude(local.transform.position - transform.position) < 60f * 60f;
+    }
+
     public void Collect()
     {
-        if (collected) { return; }
+        if (collected)
+            return;
+
+        NetworkShoot shoot = NetworkShoot.FindLocal();
+
+        if (shoot && shoot.Gun)
+        {
+            if (syncedToServer)
+                return;
+
+            syncedToServer = true;
+            shoot.RequestAmmo(ammoAmount);
+            Despawn();
+            return;
+        }
 
         SimpleShoot gun = FindFirstObjectByType<SimpleShoot>();
-        if (!gun) { return; }
+        if (!gun)
+            return;
 
         collected = true;
         gun.AddAmmo(ammoAmount);
+        Despawn();
+    }
+
+    void Despawn()
+    {
+        collected = true;
 
         if (destroyOnCollect)
             Destroy(gameObject);
@@ -54,9 +88,18 @@ public class AmmoPickup : MonoBehaviour, ICollectable
 
     void OnTriggerEnter(Collider other)
     {
-        if (collected) { return; }
+        if (collected || !BelongsToLocalPlayer(other))
+            return;
 
-        if (other.GetComponentInParent<SUPERCharacterAIO>() || other.CompareTag("Player"))
-            Collect();
+        Collect();
+    }
+
+    bool BelongsToLocalPlayer(Collider other)
+    {
+        if (!NetGuard.SessionActive)
+            return true;
+
+        Mirror.NetworkIdentity identity = other.GetComponentInParent<Mirror.NetworkIdentity>();
+        return identity && identity.isLocalPlayer;
     }
 }

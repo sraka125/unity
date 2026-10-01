@@ -338,6 +338,18 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 6817638361354391145, guid: 32fce1012f8c24c43af86f00f457f500, type: 3}
+      propertyPath: crosshairSprite
+      value: 
+      objectReference: {fileID: 21300000, guid: 1cd876775e6966c4da5af74d9b53390d, type: 3}
+    - target: {fileID: 6817638361354391145, guid: 32fce1012f8c24c43af86f00f457f500, type: 3}
+      propertyPath: autoGenerateCrosshair
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6817638361354391145, guid: 32fce1012f8c24c43af86f00f457f500, type: 3}
+      propertyPath: perspectiveSwitchingKey
+      value: 0
+      objectReference: {fileID: 0}
     - target: {fileID: 6817638361354391147, guid: 32fce1012f8c24c43af86f00f457f500, type: 3}
       propertyPath: m_Name
       value: Super First Person Controller
@@ -605,6 +617,14 @@ MonoBehaviour:
   respawnDelay: 1
   resetAmmoOnRespawn: 1
   restoreHealthOnRespawn: 1
+  snapToGround: 1
+  groundMask:
+    serializedVersion: 2
+    m_Bits: 4294967295
+  probeHeight: 100
+  probeDistance: 300
+  groundOffset: 0.1
+  settleDelay: 0.1
 --- !u!1001 &2100000010
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -731,10 +751,18 @@ MonoBehaviour:
   textureTileSize: 8
   minTables: 1
   maxTables: 3
-  tableSurfaceOffset: 0.95
   edgePadding: 4
   placeAmmoOnTables: 1
   looseAmmoChance: 0.35
+  placementAttempts: 32
+  maxGroundSlope: 32
+  slopeSampleRadius: 1
+  minTableSpacing: 7
+  propSink: 0.03
+  alignToNormal: 0.6
+  sleepPropsOnSpawn: 1
+  ammoSurfaceOffset: 0.12
+  ammoSpread: 0.4
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
