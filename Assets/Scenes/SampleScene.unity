@@ -355,6 +355,11 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 6817638360860843947, guid: 32fce1012f8c24c43af86f00f457f500, type: 3}
   m_PrefabInstance: {fileID: 1851678096}
   m_PrefabAsset: {fileID: 0}
+--- !u!4 &1851678098 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: 6817638361354391144, guid: 32fce1012f8c24c43af86f00f457f500, type: 3}
+  m_PrefabInstance: {fileID: 1851678096}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &1914062489
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -657,6 +662,79 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: bf23a3937f434277b7965a9e7cb90557, type: 3}
+--- !u!1 &2200000001
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 2200000002}
+  - component: {fileID: 2200000003}
+  m_Layer: 0
+  m_Name: WorldChunkGenerator
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &2200000002
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2200000001}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &2200000003
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2200000001}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 84b212e55f9949a3b085d869cd695658, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  player: {fileID: 1851678098}
+  tablePrefab: {fileID: 8384764855486634466, guid: 755ee32b773522244b5669c29d5ebd96, type: 3}
+  ammoPrefab: {fileID: 1000000001, guid: bf23a3937f434277b7965a9e7cb90557, type: 3}
+  terrainLayer: {fileID: 8574412962073106934, guid: 3297e0586abc43855addbf2701953829, type: 2}
+  disableOnStart:
+  - {fileID: 615730089}
+  chunkSize: 50
+  viewRadius: 2
+  groundY: -23.44
+  seed: 1337
+  heightmapResolution: 129
+  terrainVerticalSize: 24
+  noiseScale: 0.02
+  hillStrength: 1
+  noiseOctaves: 4
+  lacunarity: 2
+  gain: 0.5
+  ridgeAmount: 0.4
+  smoothingExponent: 1.6
+  generateFallbackTexture: 1
+  terrainColorLow: {r: 0.24, g: 0.32, b: 0.18, a: 1}
+  terrainColorHigh: {r: 0.45, g: 0.47, b: 0.33, a: 1}
+  textureTileSize: 8
+  minTables: 1
+  maxTables: 3
+  tableSurfaceOffset: 0.95
+  edgePadding: 4
+  placeAmmoOnTables: 1
+  looseAmmoChance: 0.35
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
@@ -667,3 +745,4 @@ SceneRoots:
   - {fileID: 302930480}
   - {fileID: 2100000002}
   - {fileID: 2100000010}
+  - {fileID: 2200000002}
