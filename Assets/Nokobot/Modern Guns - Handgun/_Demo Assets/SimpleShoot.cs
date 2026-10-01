@@ -9,6 +9,10 @@ public class SimpleShoot : MonoBehaviour
     public GameObject bulletPrefab;
     public GameObject casingPrefab;
     public GameObject muzzleFlashPrefab;
+    [SerializeField]
+    AudioClip shoot;
+    [SerializeField]
+    AudioClip reload;
 
     [Header("Location Refrences")]
     [SerializeField] private Animator gunAnimator;
@@ -38,6 +42,32 @@ public class SimpleShoot : MonoBehaviour
             //Calls animation on the gun that has the relevant animation events that will fire
             gunAnimator.SetTrigger("Fire");
         }
+
+        if (Input.GetButtonDown("Reload"))
+        {
+            Reload();
+        }
+    }
+
+    //Call this from a UI button, or from an animation event on the reload clip
+    public void Reload()
+    {
+        if (gunAnimator)
+            gunAnimator.SetTrigger("Reload");
+
+        //Plays the reload sound, in case the animation has no event for it
+        if (reload)
+            PlayClip(reload);
+    }
+
+    void PlayClip(AudioClip clip)
+    {
+        if (!clip) { return; }
+
+        AudioSource src = gameObject.AddComponent<AudioSource>();
+        src.clip = clip;
+        src.Play();
+        Destroy(src, clip.length);
     }
 
 
@@ -60,7 +90,12 @@ public class SimpleShoot : MonoBehaviour
 
         // Create a bullet and add force on it in direction of the barrel
         Instantiate(bulletPrefab, barrelLocation.position, barrelLocation.rotation).GetComponent<Rigidbody>().AddForce(barrelLocation.forward * shotPower);
-
+        if (shoot)
+        {
+            AudioSource src = gameObject.AddComponent<AudioSource>();
+            src.clip = shoot;
+            src.Play();
+        }
     }
 
     //This function creates a casing at the ejection slot
