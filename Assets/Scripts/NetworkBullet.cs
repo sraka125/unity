@@ -22,21 +22,19 @@ public class NetworkBullet : NetworkBehaviour
         Invoke(nameof(DestroySelf), lifetime);
     }
 
-    void OnCollisionEnter(Collision collision)
+void OnCollisionEnter(Collision collision)
     {
-        // Вся логика столкновений и урона в сетевой игре должна обрабатываться ТОЛЬКО на сервере
         if (!isServer)
             return;
 
-        // Проверяем, есть ли у объекта, в который попали, компонент здоровья
-        PlayerHealth targetHealth = collision.gameObject.GetComponent<PlayerHealth>();
+        // Ищем PlayerHealth на объекте или его родителях
+        PlayerHealth targetHealth = collision.gameObject.GetComponentInParent<PlayerHealth>();
         if (targetHealth != null)
         {
-            // Наносим урон конкретному игроку
-            targetHealth.ApplyDamage(damage);
+            // Вызываем метод урона напрямую на сервере, минуя клиентские проверки authority
+            targetHealth.ApplyDamageFromServer(damage);
         }
 
-        // Уничтожаем пулю при столкновении
         DestroySelf();
     }
 

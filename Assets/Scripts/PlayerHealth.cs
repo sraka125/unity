@@ -145,6 +145,15 @@ public class PlayerHealth : NetworkBehaviour
         DamageOnServer(amount);
     }
 
+    // Вызывается напрямую сервером (например, из пули)
+    public void ApplyDamageFromServer(float amount)
+    {
+        if (!Mirror.NetworkServer.active)
+            return;
+
+        DamageOnServer(amount);
+    }
+
     [Command]
     public void CmdRequestDamage(float amount)
     {
