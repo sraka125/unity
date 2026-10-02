@@ -1,4 +1,5 @@
 using System.Collections;
+using Mirror;
 using SUPERCharacter;
 using UnityEngine;
 
@@ -24,64 +25,48 @@ public class PlayerRespawn : MonoBehaviour
     private SimpleShoot gun;
     private Vector3 spawnPosition;
     private Quaternion spawnRotation;
-    private bool respawning;
+    private Vector3 requestedPoint;
     private bool hasRequestedPoint;
+    private bool respawning;
+    private bool initialized;
     private WorldChunkGenerator chunkGenerator;
     private PlayerHealth healthController;
+    private NetworkIdentity networkIdentity;
 
     public Vector3 CurrentSpawnPosition => spawnPosition;
     public PlayerHealth HealthController => healthController;
+    public bool IsNetworked => NetGuard.Networked(networkIdentity);
+
+    void Awake()
+    {
+        networkIdentity = GetComponent<NetworkIdentity>();
+        healthController = GetComponent<PlayerHealth>();
+        chunkGenerator = FindFirstObjectByType<WorldChunkGenerator>();
+    }
 
     void Start()
     {
-        healthController = GetComponent<PlayerHealth>();
-
-        if (!player)
-        {
-            SUPERCharacterAIO found = FindFirstObjectByType<SUPERCharacterAIO>();
-            if (found)
-                player = found.transform;
-        }
-        else
-        {
-            character = player.GetComponent<SUPERCharacterAIO>();
-        }
-
-        if (!player)
-        {
-            Debug.LogWarning("PlayerRespawn: no player found.");
-            enabled = false;
-            return;
-        }
-
-        playerBody = player.GetComponent<Rigidbody>();
-        gun = player.GetComponentInChildren<SimpleShoot>();
-        chunkGenerator = FindFirstObjectByType<WorldChunkGenerator>();
-
-        if (spawnPoint)
-        {
-            spawnPosition = spawnPoint.position;
-            spawnRotation = spawnPoint.rotation;
-        }
-        else
-        {
-            spawnPosition = player.position;
-            spawnRotation = player.rotation;
-        }
-
-        if (!IsLocalPlayer())
+        if (!Initialize())
             return;
 
-        if (snapToGround)
+        if (snapToGround && IsLocalPlayer())
             StartCoroutine(SettleOnGroundRoutine());
     }
 
     void Update()
     {
-        if (respawning || !player || healthController)
+        if (!initialized)
+        {
+            if (!Initialize())
+                return;
+        }
+        else if (!player)
+        {
+            initialized = false;
             return;
+        }
 
-        if (!IsLocalPlayer())
+        if (respawning || healthController || !HasAuthority())
             return;
 
         bool shouldRespawn = player.position.y < fallY;
@@ -93,24 +78,95 @@ public class PlayerRespawn : MonoBehaviour
             StartCoroutine(RespawnRoutine());
     }
 
-    bool IsLocalPlayer()
+    bool Initialize()
     {
-        Mirror.NetworkIdentity identity = player.GetComponent<Mirror.NetworkIdentity>();
+        if (player && IsWrongPlayer(player))
+            player = null;
 
-        if (!identity || !NetGuard.SessionActive)
+        if (!player)
+            player = ResolveOwnPlayer();
+
+        if (!player)
+            return false;
+
+        character = player.GetComponent<SUPERCharacterAIO>();
+        playerBody = player.GetComponent<Rigidbody>();
+        gun = player.GetComponentInChildren<SimpleShoot>();
+
+        if (!chunkGenerator)
+            chunkGenerator = FindFirstObjectByType<WorldChunkGenerator>();
+
+        if (!hasRequestedPoint)
+        {
+            if (spawnPoint)
+            {
+                spawnPosition = spawnPoint.position;
+                spawnRotation = spawnPoint.rotation;
+            }
+            else
+            {
+                spawnPosition = player.position;
+                spawnRotation = player.rotation;
+            }
+        }
+
+        initialized = true;
+        return true;
+    }
+
+    Transform ResolveOwnPlayer()
+    {
+        if (character)
+            return character.transform;
+
+        SUPERCharacterAIO own = GetComponent<SUPERCharacterAIO>();
+
+        if (own)
+            return own.transform;
+
+        if (spawnPoint && spawnPoint.GetComponent<SUPERCharacterAIO>())
+            return spawnPoint;
+
+        return null;
+    }
+
+    bool IsWrongPlayer(Transform candidate)
+    {
+        if (!NetGuard.SessionActive || !networkIdentity)
+            return false;
+
+        NetworkIdentity identity = candidate.GetComponent<NetworkIdentity>();
+
+        if (!identity)
             return true;
 
-        return identity.isLocalPlayer;
+        return identity != networkIdentity && !identity.isLocalPlayer;
+    }
+
+    bool HasAuthority()
+    {
+        if (!NetGuard.SessionActive)
+            return true;
+
+        return NetworkServer.active;
+    }
+
+    bool IsLocalPlayer()
+    {
+        if (!NetGuard.SessionActive || !networkIdentity)
+            return true;
+
+        return networkIdentity.isLocalPlayer;
     }
 
     IEnumerator SettleOnGroundRoutine()
     {
         yield return new WaitForSeconds(settleDelay);
 
-        bool wasPaused = character != null;
+        if (!player)
+            yield break;
 
-        if (wasPaused)
-            character.PausePlayer(PauseModes.FreezeInPlace);
+        bool wasPaused = PauseCharacter();
 
         spawnPosition = ResolveSpawnPosition(spawnPosition);
         TeleportPlayer(spawnPosition, spawnRotation);
@@ -124,7 +180,7 @@ public class PlayerRespawn : MonoBehaviour
         if (!snapToGround)
             return requested;
 
-        bool useRequested = requested != Vector3.zero || hasRequestedPoint;
+        bool useRequested = hasRequestedPoint || requested != Vector3.zero;
         return ResolveGround(useRequested ? requested : spawnPosition);
     }
 
@@ -141,7 +197,9 @@ public class PlayerRespawn : MonoBehaviour
 
         for (int i = 0; i < hits.Length; i++)
         {
-            if (hits[i].transform.IsChildOf(player) || hits[i].transform == player)
+            Transform hitTransform = hits[i].transform;
+
+            if (player && (hitTransform == player || hitTransform.IsChildOf(player)))
                 continue;
 
             if (hits[i].point.y > bestY)
@@ -157,6 +215,15 @@ public class PlayerRespawn : MonoBehaviour
         return position;
     }
 
+    bool PauseCharacter()
+    {
+        if (!character || character.controllerPaused)
+            return false;
+
+        character.PausePlayer(PauseModes.FreezeInPlace);
+        return true;
+    }
+
     void TeleportPlayer(Vector3 position, Quaternion rotation)
     {
         if (playerBody)
@@ -166,7 +233,7 @@ public class PlayerRespawn : MonoBehaviour
             playerBody.position = position;
             playerBody.rotation = rotation;
         }
-        else
+        else if (player)
         {
             player.SetPositionAndRotation(position, rotation);
         }
@@ -177,23 +244,61 @@ public class PlayerRespawn : MonoBehaviour
         if (!point) { return; }
 
         spawnPoint = point;
-        spawnPosition = ResolveSpawnPosition(point.position);
-        spawnRotation = point.rotation;
+        requestedPoint = point.position;
         hasRequestedPoint = true;
+        spawnPosition = ResolveSpawnPosition(requestedPoint);
+        spawnRotation = point.rotation;
+    }
+
+    public Vector3 RequestSpawnPosition(Vector3 point)
+    {
+        requestedPoint = point;
+        hasRequestedPoint = true;
+        spawnPosition = ResolveSpawnPosition(point);
+        return spawnPosition;
+    }
+
+    public void ClearRequestedSpawn()
+    {
+        hasRequestedPoint = false;
+        requestedPoint = Vector3.zero;
+
+        if (spawnPoint)
+        {
+            spawnPosition = spawnPoint.position;
+            spawnRotation = spawnPoint.rotation;
+            return;
+        }
+
+        if (player)
+        {
+            spawnPosition = player.position;
+            spawnRotation = player.rotation;
+        }
     }
 
     public void RespawnNow()
     {
-        if (!respawning && !healthController)
-            StartCoroutine(RespawnRoutine());
+        if (respawning)
+            return;
+
+        if (healthController)
+        {
+            healthController.Kill();
+            return;
+        }
+
+        if (!HasAuthority())
+            return;
+
+        StartCoroutine(RespawnRoutine());
     }
 
     IEnumerator RespawnRoutine()
     {
         respawning = true;
 
-        if (character)
-            character.PausePlayer(PauseModes.FreezeInPlace);
+        bool wasPaused = PauseCharacter();
 
         yield return new WaitForSeconds(respawnDelay);
 
@@ -207,15 +312,10 @@ public class PlayerRespawn : MonoBehaviour
                 character.ImmediateStateChange(missing, StatSelector.Health);
         }
 
-        if (resetAmmoOnRespawn)
-        {
-            if (!gun)
-                gun = player.GetComponentInChildren<SimpleShoot>();
-            if (gun)
-                gun.ResetAmmo();
-        }
+        if (resetAmmoOnRespawn && gun)
+            gun.ResetAmmo();
 
-        if (character)
+        if (wasPaused)
             character.UnpausePlayer();
 
         respawning = false;

@@ -8,7 +8,10 @@ public static class NetGuard
         NetworkManager.singleton != null && NetworkManager.singleton.isNetworkActive;
 
     public static bool Networked(NetworkBehaviour behaviour) =>
-        behaviour != null && behaviour.netIdentity != null && SessionActive;
+        behaviour != null && Networked(behaviour.netIdentity);
+
+    public static bool Networked(NetworkIdentity identity) =>
+        identity != null && SessionActive;
 
     public static bool HasAuthority(NetworkBehaviour behaviour) =>
         !Networked(behaviour) || behaviour.isServer;
