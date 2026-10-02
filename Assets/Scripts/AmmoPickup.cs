@@ -80,6 +80,16 @@ public class AmmoPickup : MonoBehaviour, ICollectable
     {
         collected = true;
 
+        Mirror.NetworkIdentity identity = GetComponent<Mirror.NetworkIdentity>();
+
+        if (NetGuard.Networked(identity))
+        {
+            if (Mirror.NetworkServer.active)
+                Mirror.NetworkServer.Destroy(gameObject);
+
+            return;
+        }
+
         if (destroyOnCollect)
             Destroy(gameObject);
         else

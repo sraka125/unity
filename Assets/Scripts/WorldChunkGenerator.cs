@@ -8,6 +8,7 @@ public class WorldChunkGenerator : MonoBehaviour
     [SerializeField] private Transform player;
     [SerializeField] private GameObject tablePrefab;
     [SerializeField] private GameObject ammoPrefab;
+    [SerializeField] private GameObject ammoOnTablePrefab;
     [SerializeField] private TerrainLayer terrainLayer;
     [SerializeField] private GameObject[] disableOnStart;
 
@@ -74,6 +75,7 @@ public class WorldChunkGenerator : MonoBehaviour
         public int TableCount;
         public bool LooseAmmo;
         public readonly List<Vector3> Tables = new List<Vector3>();
+        public readonly List<GameObject> NetProps = new List<GameObject>();
     }
 
     void Start()
@@ -420,15 +422,22 @@ public class WorldChunkGenerator : MonoBehaviour
 
         Quaternion rot = BuildPlacementRotation(normal, (float)rng.NextDouble() * 360f);
 
-        GameObject table = Instantiate(tablePrefab, pos, rot, chunk.Root.transform);
-        table.name = "Table";
+        GameObject table = SpawnProp(tablePrefab, pos, rot, chunk, "Table", out _);
+
+        if (!table)
+            return;
 
         if (sleepPropsOnSpawn)
             SleepBody(table);
 
         chunk.Tables.Add(pos);
 
-        if (!placeAmmoOnTables || !ammoPrefab)
+        if (!placeAmmoOnTables)
+            return;
+
+        GameObject ammoPrefabToUse = ammoOnTablePrefab ? ammoOnTablePrefab : ammoPrefab;
+
+        if (!ammoPrefabToUse)
             return;
 
         float topY = GetHighestPoint(table, pos);
@@ -437,8 +446,7 @@ public class WorldChunkGenerator : MonoBehaviour
             topY + ammoSurfaceOffset,
             pos.z + ((float)rng.NextDouble() - 0.5f) * ammoSpread);
 
-        GameObject ammo = Instantiate(ammoPrefab, ammoPos, Quaternion.identity, chunk.Root.transform);
-        ammo.name = "AmmoOnTable";
+        SpawnProp(ammoPrefabToUse, ammoPos, Quaternion.identity, chunk, "AmmoOnTable", out _);
     }
 
     void PlaceLooseAmmo(Chunk chunk, System.Random rng)
@@ -449,7 +457,38 @@ public class WorldChunkGenerator : MonoBehaviour
             return;
 
         Vector3 ammoPos = new Vector3(pos.x, GetHeightAt(pos.x, pos.z) + ammoSurfaceOffset, pos.z);
-        Instantiate(ammoPrefab, ammoPos, Quaternion.identity, chunk.Root.transform).name = "AmmoLoose";
+        SpawnProp(ammoPrefab, ammoPos, Quaternion.identity, chunk, "AmmoLoose", out _);
+    }
+
+    GameObject SpawnProp(GameObject prefab, Vector3 position, Quaternion rotation, Chunk chunk, string propName, out bool spawnedOverNetwork)
+    {
+        spawnedOverNetwork = false;
+
+        if (!prefab)
+            return null;
+
+        Mirror.NetworkIdentity identity = prefab.GetComponent<Mirror.NetworkIdentity>();
+        bool networked = identity != null && NetGuard.SessionActive;
+
+        if (networked)
+        {
+            if (!Mirror.NetworkServer.active)
+                return null;
+
+            GameObject netInstance = Instantiate(prefab, position, rotation);
+            netInstance.name = propName;
+
+            Mirror.NetworkServer.Spawn(netInstance);
+
+            chunk.NetProps.Add(netInstance);
+            spawnedOverNetwork = true;
+
+            return netInstance;
+        }
+
+        GameObject instance = Instantiate(prefab, position, rotation, chunk.Root.transform);
+        instance.name = propName;
+        return instance;
     }
 
     bool TryFindGroundSpot(Vector3 origin, Chunk chunk, System.Random rng, float spacing, out Vector3 spot, out Vector3 normal)
@@ -557,6 +596,19 @@ public class WorldChunkGenerator : MonoBehaviour
 
     void DestroyChunk(Chunk chunk)
     {
+        if (NetGuard.SessionActive && Mirror.NetworkServer.active)
+        {
+            for (int i = 0; i < chunk.NetProps.Count; i++)
+            {
+                GameObject netProp = chunk.NetProps[i];
+
+                if (netProp)
+                    Mirror.NetworkServer.Destroy(netProp);
+            }
+        }
+
+        chunk.NetProps.Clear();
+
         if (!chunk.Root)
             return;
 
