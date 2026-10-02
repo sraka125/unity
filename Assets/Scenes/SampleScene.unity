@@ -761,9 +761,9 @@ MonoBehaviour:
   blockPrefab: {fileID: 3425335070027867542, guid: a5867f73e7aeaa185a9d6ea47ec7d2ea, type: 3}
   blockSize: 0.93
   blocksPerChunkAxis: 16
+  stripChildColliders: 1
   disableOnStart:
   - {fileID: 615730089}
-  autoSnapStartPositions: 1
   groundY: -23.44
   seed: 1337
   noiseScale: 0.02

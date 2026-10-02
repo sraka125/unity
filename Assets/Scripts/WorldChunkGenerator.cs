@@ -15,6 +15,8 @@ public class WorldChunkGenerator : MonoBehaviour
     [SerializeField] private GameObject blockPrefab;
     [SerializeField] private float blockSize = 2f; // Размер одного блока в метрах
     [SerializeField] private int blocksPerChunkAxis = 16; // Сколько блоков по X и Z в одном чанке
+    [Tooltip("Отключить коллайдеры дочерних объектов блока — на одном блоке их может быть несколько, а объём уже покрыт корневым коллайдером.")]
+    [SerializeField] private bool stripChildColliders = true;
 
     [Header("Setup")]
     [SerializeField] private GameObject[] disableOnStart;
@@ -190,25 +192,42 @@ public class WorldChunkGenerator : MonoBehaviour
 
     public float GetHeightAt(float worldX, float worldZ)
     {
-        Vector2Int coord = WorldToChunk(new Vector3(worldX, 0f, worldZ));
-        if (chunks.TryGetValue(coord, out Chunk chunk))
-        {
-            float localX = worldX - chunk.Origin.x;
-            float localZ = worldZ - chunk.Origin.z;
-            
-            // Считаем индексы блока сетки
-            int bx = Mathf.Clamp(Mathf.RoundToInt(localX / blockSize), 0, blocksPerChunkAxis - 1);
-            int bz = Mathf.Clamp(Mathf.RoundToInt(localZ / blockSize), 0, blocksPerChunkAxis - 1);
+        return GetBlockTopAt(worldX, worldZ);
+    }
 
-            Vector2Int gridKey = new Vector2Int(bx, bz);
-            if (chunk.HeightGrid.TryGetValue(gridKey, out float h))
-            {
-                return h;
-            }
+    void GetBlockIndex(Vector2Int coord, float worldX, float worldZ, out int bx, out int bz)
+    {
+        Vector3 origin = ChunkOrigin(coord);
+
+        bx = Mathf.Clamp(Mathf.FloorToInt((worldX - origin.x) / blockSize), 0, blocksPerChunkAxis - 1);
+        bz = Mathf.Clamp(Mathf.FloorToInt((worldZ - origin.z) / blockSize), 0, blocksPerChunkAxis - 1);
+    }
+
+    int GetBlockSteps(Vector2Int coord, int bx, int bz)
+    {
+        Vector3 origin = ChunkOrigin(coord);
+        float sampleX = origin.x + bx * blockSize;
+        float sampleZ = origin.z + bz * blockSize;
+
+        return Mathf.RoundToInt((SampleHeightNormalized(sampleX, sampleZ) * maxHeight) / blockSize);
+    }
+
+    float GetBlockTopAt(float worldX, float worldZ)
+    {
+        Vector2Int coord = WorldToChunk(new Vector3(worldX, 0f, worldZ));
+
+        if (chunks.TryGetValue(coord, out Chunk chunk) && chunk.HeightGrid.Count > 0)
+        {
+            GetBlockIndex(coord, worldX, worldZ, out int bx, out int bz);
+
+            if (chunk.HeightGrid.TryGetValue(new Vector2Int(bx, bz), out float top))
+                return top;
         }
 
-        // Фолбек, если чанк не найден
-        return groundY + SampleHeightNormalized(worldX, worldZ) * maxHeight;
+        GetBlockIndex(coord, worldX, worldZ, out int fx, out int fz);
+        int steps = GetBlockSteps(coord, fx, fz);
+
+        return groundY + steps * blockSize + blockSize * 0.5f;
     }
 
     Chunk CreateChunk(Vector2Int coord)
@@ -231,17 +250,15 @@ public class WorldChunkGenerator : MonoBehaviour
         {
             for (int z = 0; z < blocksPerChunkAxis; z++)
             {
-                float worldX = origin.x + x * blockSize;
-                float worldZ = origin.z + z * blockSize;
+                int steps = GetBlockSteps(coord, x, z);
+                float centerY = origin.y + steps * blockSize;
+                float topY = centerY + blockSize * 0.5f;
 
-                float normalizedHeight = SampleHeightNormalized(worldX, worldZ);
-                int blockSteps = Mathf.RoundToInt((normalizedHeight * maxHeight) / blockSize);
-                float topHeight = origin.y + blockSteps * blockSize;
-
-                chunk.HeightGrid[new Vector2Int(x, z)] = topHeight;
+                // HeightGrid хранит именно верхнюю грань — по ней ставятся игроки и предметы
+                chunk.HeightGrid[new Vector2Int(x, z)] = topY;
 
                 // Спавним верхний блок (или колонку блоков при желании)
-                SpawnBlock(new Vector3(worldX + blockSize * 0.5f, topHeight, worldZ + blockSize * 0.5f), root.transform);
+                SpawnBlock(new Vector3(origin.x + x * blockSize + blockSize * 0.5f, centerY, origin.z + z * blockSize + blockSize * 0.5f), root.transform);
             }
         }
 
@@ -271,6 +288,25 @@ public class WorldChunkGenerator : MonoBehaviour
             block.transform.position = pos;
             block.transform.localScale = new Vector3(blockSize, blockSize, blockSize);
             block.transform.SetParent(parent, false);
+        }
+
+        if (stripChildColliders)
+            StripChildColliders(block);
+    }
+
+    void StripChildColliders(GameObject block)
+    {
+        Collider root = block.GetComponent<Collider>();
+
+        if (!root)
+            return;
+
+        Collider[] all = block.GetComponentsInChildren<Collider>();
+
+        for (int i = 0; i < all.Length; i++)
+        {
+            if (all[i] != root && all[i].enabled)
+                all[i].enabled = false;
         }
     }
 
@@ -355,11 +391,10 @@ public class WorldChunkGenerator : MonoBehaviour
             if (spacing > 0f && IsCrowded(chunk, worldX, worldZ, spacing))
                 continue;
 
-            // Строго берем точную высоту вершины куба под этой точкой
+            // Строго берем точную высоту верхней грани куба под этой точкой
             float height = GetHeightAt(worldX, worldZ);
-            
-            // Ставим позицию ровно на верхнюю грань куба (+ учитываем размер блока по вертикали, так как куб масштабируется от центра)
-            spot = new Vector3(worldX, height + (blockSize * 0.5f) + propSink, worldZ);
+
+            spot = new Vector3(worldX, height + propSink, worldZ);
             return true;
         }
         return false;

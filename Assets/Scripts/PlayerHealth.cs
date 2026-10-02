@@ -16,6 +16,9 @@ public class PlayerHealth : NetworkBehaviour
     [SerializeField] private float fallY = -40f;
     [SerializeField] private Transform spawnPoint;
     [SerializeField] private bool searchGroundOnRespawn = true;
+    [SerializeField] private float spawnSettleDelay = 0.25f;
+    [SerializeField] private float groundClearance = 0.05f;
+    [SerializeField] private float probeHeight = 200f;
 
     [SyncVar(hook = nameof(OnHealthChanged))] private float health;
     [SyncVar] private float syncedMaxHealth;
@@ -105,6 +108,85 @@ public class PlayerHealth : NetworkBehaviour
             dead = false;
             ApplyHealthToCharacter(health);
         }
+
+        StartCoroutine(SettleOnGroundRoutine());
+    }
+
+    IEnumerator SettleOnGroundRoutine()
+    {
+        yield return new WaitForSeconds(spawnSettleDelay);
+
+        // Телепортировать чужих игроков нельзя: на клиенте позиция приходит из сети.
+        if (NetGuard.Networked(this) && !isLocalPlayer)
+            yield break;
+
+        if (!playerBody)
+            yield break;
+
+        Vector3 current = playerBody.position;
+        float groundY = ResolveGroundY(current.x, current.z);
+
+        Teleport(PushOutOfSolids(new Vector3(current.x, groundY, current.z)));
+    }
+
+    float ResolveGroundY(float worldX, float worldZ)
+    {
+        if (chunkGenerator)
+            return chunkGenerator.GetHeightAt(worldX, worldZ) + groundClearance;
+
+        Vector3 origin = new Vector3(worldX, playerBody.position.y + probeHeight, worldZ);
+
+        if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, probeHeight * 2f, ~0, QueryTriggerInteraction.Ignore))
+            return hit.point.y + groundClearance;
+
+        return playerBody.position.y;
+    }
+
+    Vector3 PushOutOfSolids(Vector3 position)
+    {
+        CapsuleCollider capsule = GetComponent<CapsuleCollider>();
+
+        if (!capsule)
+            return position;
+
+        Vector3 scale = transform.lossyScale;
+        float radius = capsule.radius * Mathf.Abs(scale.x);
+        float height = capsule.height * Mathf.Abs(scale.y);
+        Vector3 localCenter = new Vector3(capsule.center.x * scale.x, capsule.center.y * scale.y, capsule.center.z * scale.z);
+
+        float halfSegment = Mathf.Max(height * 0.5f - radius, 0f);
+        Vector3 pivot = position + localCenter;
+
+        for (int i = 0; i < 8; i++)
+        {
+            Vector3 top = pivot + Vector3.up * halfSegment;
+            Vector3 bottom = pivot - Vector3.up * halfSegment;
+
+            Collider[] overlaps = Physics.OverlapCapsule(top, bottom, radius, ~0, QueryTriggerInteraction.Ignore);
+            float highest = float.NegativeInfinity;
+            bool found = false;
+
+            for (int j = 0; j < overlaps.Length; j++)
+            {
+                Transform hit = overlaps[j].transform;
+
+                if (hit == transform || hit.IsChildOf(transform))
+                    continue;
+
+                if (overlaps[j].bounds.max.y > highest)
+                {
+                    highest = overlaps[j].bounds.max.y;
+                    found = true;
+                }
+            }
+
+            if (!found)
+                break;
+
+            pivot = new Vector3(pivot.x, highest + 0.02f, pivot.z);
+        }
+
+        return pivot - localCenter;
     }
 
     public override void OnStartServer()
@@ -152,7 +234,9 @@ public class PlayerHealth : NetworkBehaviour
     // Вызывается напрямую сервером (например, из пули)
     public void ApplyDamageFromServer(float amount)
     {
-        if (!Mirror.NetworkServer.active)
+        // Без активной сессии Mirror (обычный Play в редакторе) "сервер" — это
+        // текущий пир, иначе урон молча терялся бы.
+        if (NetGuard.SessionActive && !Mirror.NetworkServer.active)
             return;
 
         DamageOnServer(amount);
@@ -258,7 +342,7 @@ public class PlayerHealth : NetworkBehaviour
     {
         ApplyDeadState(false);
         ApplyHealthToCharacter(health);
-        Teleport(point);
+        Teleport(PushOutOfSolids(point));
     }
 
     Vector3 GetRespawnPoint()
@@ -272,10 +356,8 @@ public class PlayerHealth : NetworkBehaviour
         else
             point = GetNetworkStartPosition();
 
-        if (searchGroundOnRespawn && respawn)
-            point = respawn.ResolveSpawnPosition(point);
-        else if (searchGroundOnRespawn && chunkGenerator)
-            point = new Vector3(point.x, chunkGenerator.GetHeightAt(point.x, point.z) + 0.1f, point.z);
+        if (searchGroundOnRespawn)
+            point = new Vector3(point.x, ResolveGroundY(point.x, point.z), point.z);
 
         return point;
     }
