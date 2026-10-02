@@ -175,7 +175,7 @@ public class PlayerHealth : NetworkBehaviour
     {
         yield return new WaitForSeconds(respawnDelay);
 
-        Vector3 point = GetRespawnPoint();
+        Vector3 point = Object.FindAnyObjectByType<NetworkStartPosition>().transform.position;
 
         dead = false;
         SetHealth(MaxHealth);

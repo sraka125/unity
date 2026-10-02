@@ -24,6 +24,13 @@ public class SimpleShoot : MonoBehaviour
     [Tooltip("Specify time to destory the casing object")] [SerializeField] private float destroyTimer = 2f;
     [Tooltip("Bullet Speed")] [SerializeField] private float shotPower = 500f;
     [Tooltip("Casing Ejection Speed")] [SerializeField] private float ejectPower = 150f;
+    [Tooltip("Длина оригинальной анимации выстрела в секундах при speed = 1")] [SerializeField] private float baseAnimationDuration = 0.25f;
+
+    [Header("Fire Rate")]
+    [Tooltip("Minimum seconds between two shots. Lower = faster.")]
+    [SerializeField, Range(0.0001f, 2f)] private float fireRate = 0.25f;
+    [Tooltip("Hold the fire button to keep shooting. Disable for semi-auto.")]
+    [SerializeField] private bool automaticFire = true;
 
     [Header("Reload")]
     [Tooltip("Rounds the magazine holds")] [SerializeField] private int magazineCapacity = 7;
@@ -37,11 +44,28 @@ public class SimpleShoot : MonoBehaviour
     private bool isReloading;
     private int currentAmmo;
     private int reserveAmmo;
+    private float nextShotTime;
 
     public int CurrentAmmo => currentAmmo;
     public int MagazineCapacity => magazineCapacity;
     public int ReserveAmmo => reserveAmmo;
     public bool IsReloading => isReloading;
+
+    public float FireRate
+    {
+        get => fireRate;
+        set => fireRate = Mathf.Clamp(value, 0.02f, 2f);
+    }
+
+    public float ShotsPerSecond => 1f / fireRate;
+
+    public bool AutomaticFire
+    {
+        get => automaticFire;
+        set => automaticFire = value;
+    }
+
+    public bool CanFire => !isReloading && currentAmmo > 0 && Time.time >= nextShotTime;
 
     public event System.Action OnAmmoChanged;
 
@@ -58,18 +82,28 @@ public class SimpleShoot : MonoBehaviour
 
         currentAmmo = magazineCapacity;
         reserveAmmo = Mathf.Max(0, startingReserveAmmo);
+        nextShotTime = Time.time;
         NotifyAmmoChanged();
 
         if (FindFirstObjectByType<AmmoHUD>() == null)
             new GameObject("AmmoHUD").AddComponent<AmmoHUD>();
     }
 
-    void Update()
+void Update()
     {
-        //If you want a different input, change it here
-        if (Input.GetButtonDown("Fire1") && currentAmmo > 0 && !isReloading)
+        bool firePressed = automaticFire ? Input.GetButton("Fire1") : Input.GetButtonDown("Fire1");
+
+        if (firePressed && CanFire && gunAnimator)
         {
-            //Calls animation on the gun that has the relevant animation events that will fire
+            // Рассчитываем, насколько нужно ускорить анимацию под текущий fireRate.
+            // Если fireRate быстрее, чем базовая длина анимации, аниматор ускорится.
+            if (baseAnimationDuration > 0f)
+            {
+                float speedMultiplier = baseAnimationDuration / fireRate;
+                gunAnimator.SetFloat("FireSpeed", speedMultiplier); // Опционально, если используете Speed в Blend Tree / State
+                gunAnimator.speed = Mathf.Max(1f, speedMultiplier); // Ускоряем саму анимацию оружия
+            }
+
             gunAnimator.SetTrigger("Fire");
         }
 
@@ -190,8 +224,10 @@ public class SimpleShoot : MonoBehaviour
     //This function creates the bullet behavior
     void Shoot()
     {
-        if (currentAmmo <= 0)
+        if (!CanFire)
             return;
+
+        nextShotTime = Time.time + fireRate;
 
         currentAmmo--;
         NotifyAmmoChanged();

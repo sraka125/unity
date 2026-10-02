@@ -284,7 +284,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   enableActiveDiscovery: 1
-  BroadcastAddress: 
+  BroadcastAddress: localhost
   serverBroadcastListenPort: 47777
   ActiveDiscoveryInterval: 3
   transport: {fileID: 806472509}
