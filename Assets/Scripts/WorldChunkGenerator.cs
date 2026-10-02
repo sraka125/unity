@@ -12,6 +12,11 @@ public class WorldChunkGenerator : MonoBehaviour
     [SerializeField] private GameObject terrainChunkPrefab;
     [SerializeField] private TerrainLayer terrainLayer;
     [SerializeField] private GameObject[] disableOnStart;
+    [SerializeField] private bool autoSnapStartPositions = true;
+
+    public event System.Action ChunksRebuilt;
+
+    public Transform LocalPlayer => player;
 
     [Header("Chunk Grid")]
     [SerializeField] private float chunkSize = 50f;
@@ -142,6 +147,9 @@ public class WorldChunkGenerator : MonoBehaviour
 
             if (!terrainLayer && generateFallbackTexture)
                 terrainLayer = CreateFallbackLayer();
+
+            if (autoSnapStartPositions && !TryGetComponent(out TerrainStartPositions _))
+                gameObject.AddComponent<TerrainStartPositions>();
         }
 
         if (!TerrainStreamingByServer())
@@ -216,6 +224,8 @@ public class WorldChunkGenerator : MonoBehaviour
                 chunks.Remove(key);
             }
         }
+
+        ChunksRebuilt?.Invoke();
     }
 
     bool TerrainStreamingByServer()
@@ -339,6 +349,11 @@ public class WorldChunkGenerator : MonoBehaviour
         float front = GetHeightAt(worldX, worldZ + radius);
 
         return new Vector3(left - right, radius * 2f, back - front).normalized;
+    }
+
+    public Vector3 GetTerrainNormalAt(float worldX, float worldZ, float radius)
+    {
+        return GetTerrainNormal(GetTerrainAt(WorldToChunk(new Vector3(worldX, 0f, worldZ))), worldX, worldZ, radius);
     }
 
     Chunk CreateChunk(Vector2Int coord)

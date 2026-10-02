@@ -144,7 +144,7 @@ Transform:
   m_GameObject: {fileID: 122111728}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -35.96, y: -22.51, z: -25.381794}
+  m_LocalPosition: {x: -35.96, y: -14.87, z: -25.381794}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -758,9 +758,11 @@ MonoBehaviour:
   tablePrefab: {fileID: 8384764855486634466, guid: 755ee32b773522244b5669c29d5ebd96, type: 3}
   ammoPrefab: {fileID: 1000000001, guid: bf23a3937f434277b7965a9e7cb90557, type: 3}
   ammoOnTablePrefab: {fileID: 7400000001, guid: 3801b3a8772a47d8945c94ce9036c9ee, type: 3}
+  terrainChunkPrefab: {fileID: 0}
   terrainLayer: {fileID: 8574412962073106934, guid: 3297e0586abc43855addbf2701953829, type: 2}
   disableOnStart:
   - {fileID: 615730089}
+  autoSnapStartPositions: 1
   chunkSize: 50
   viewRadius: 2
   groundY: -23.44
