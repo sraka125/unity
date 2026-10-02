@@ -74,18 +74,127 @@ public static class MultiplayerSetup
     [MenuItem(MenuRoot + "Add Network Spawn Components To Ammo Pickup", false, 22)]
     public static void ConfigureAmmoPickup(GameObject playerPrefab)
     {
-        string[] guids = AssetDatabase.FindAssets("AmmoPickup t:Prefab");
+        NetworkManager manager = Object.FindFirstObjectByType<NetworkManager>();
 
-        if (guids.Length == 0)
+        if (!manager)
+            return;
+
+        RegisterSpawnPrefab(manager, FindPrefab("AmmoPickupTable"));
+        RegisterSpawnPrefab(manager, FindPrefab("AmmoPickup"));
+
+        EditorUtility.SetDirty(manager);
+        Debug.Log("MultiplayerSetup: ammo pickup prefabs registered as network spawn prefabs.");
+    }
+
+    [MenuItem(MenuRoot + "Create Terrain Chunk Prefab", false, 23)]
+    public static void CreateTerrainChunkPrefab()
+    {
+        TerrainData data = new TerrainData
         {
-            Debug.LogWarning("MultiplayerSetup: AmmoPickup prefab not found.");
+            heightmapResolution = 129,
+            baseMapResolution = 256,
+            size = new Vector3(50f, 24f, 50f)
+        };
+
+        GameObject terrainGo = Terrain.CreateTerrainGameObject(data);
+        terrainGo.name = "TerrainChunk";
+        terrainGo.transform.position = Vector3.zero;
+
+        NetworkIdentity identity = terrainGo.AddComponent<NetworkIdentity>();
+        TerrainChunkSync sync = terrainGo.AddComponent<TerrainChunkSync>();
+        identity.sceneId = 0;
+
+        const string folder = "Assets/Prefabs";
+        string path = folder + "/TerrainChunk.prefab";
+
+        GameObject prefab = PrefabUtility.SaveAsPrefabAsset(terrainGo, path);
+
+        Object.DestroyImmediate(terrainGo);
+        Object.DestroyImmediate(data);
+
+        if (!prefab)
+        {
+            Debug.LogError("MultiplayerSetup: failed to save terrain chunk prefab.");
             return;
         }
 
-        GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(AssetDatabase.GUIDToAssetPath(guids[0]));
+        NetworkManager manager = Object.FindFirstObjectByType<NetworkManager>();
 
-        if (prefab && prefab.GetComponent<NetworkIdentity>() == null)
+        if (manager)
+        {
+            RegisterSpawnPrefab(manager, prefab);
+            EditorUtility.SetDirty(manager);
+        }
+
+        WorldChunkGenerator generator = Object.FindFirstObjectByType<WorldChunkGenerator>();
+
+        if (generator)
+        {
+            SerializedObject serialized = new SerializedObject(generator);
+            SerializedProperty property = serialized.FindProperty("terrainChunkPrefab");
+
+            if (property != null)
+            {
+                property.objectReferenceValue = prefab;
+                serialized.ApplyModifiedProperties();
+                EditorUtility.SetDirty(generator);
+            }
+        }
+
+        AssetDatabase.SaveAssets();
+        Debug.Log("MultiplayerSetup: terrain chunk prefab created at " + path);
+    }
+
+    [MenuItem(MenuRoot + "Remove NetworkIdentity From Scene Objects", false, 40)]
+    public static void StripSceneIdentities()
+    {
+        NetworkIdentity[] identities = Object.FindObjectsByType<NetworkIdentity>(FindObjectsSortMode.None);
+        int removed = 0;
+
+        for (int i = 0; i < identities.Length; i++)
+        {
+            if (PrefabUtility.IsPartOfPrefabAsset(identities[i].gameObject))
+                continue;
+
+            if (identities[i].sceneId != 0)
+                continue;
+
+            Object.DestroyImmediate(identities[i]);
+            removed++;
+        }
+
+        Debug.Log("MultiplayerSetup: removed " + removed + " NetworkIdentity component(s) without sceneId.");
+    }
+
+    static GameObject FindPrefab(string name)
+    {
+        string[] guids = AssetDatabase.FindAssets(name + " t:Prefab");
+
+        for (int i = 0; i < guids.Length; i++)
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guids[i]);
+            GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+
+            if (prefab && prefab.name == name)
+                return prefab;
+        }
+
+        return null;
+    }
+
+    static void RegisterSpawnPrefab(NetworkManager manager, GameObject prefab)
+    {
+        if (!manager || !prefab)
+            return;
+
+        if (prefab.GetComponent<NetworkIdentity>() == null)
             prefab.AddComponent<NetworkIdentity>();
+
+        if (!manager.spawnPrefabs.Contains(prefab))
+            manager.spawnPrefabs.Add(prefab);
+
+        EditorUtility.SetDirty(prefab);
+        AssetDatabase.SaveAssets();
     }
 
     static void SetupPlayerPrefab(GameObject playerPrefab)
