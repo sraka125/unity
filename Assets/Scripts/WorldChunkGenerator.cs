@@ -121,47 +121,52 @@ public class WorldChunkGenerator : MonoBehaviour
     }
 
     bool TryInitialize()
+{
+    bool isServerOrSingle = !NetGuard.SessionActive || Mirror.NetworkServer.active;
+
+    // Если это выделенный клиент (без сервера) и игрок еще не появился — ждем
+    if (!isServerOrSingle)
     {
-        bool serverStreaming = TerrainStreamingByServer() && Mirror.NetworkServer.active;
-
         player = ResolveLocalPlayer();
-
-        if (!player && !serverStreaming)
-            return false;
-
-        if (!setupDone)
-        {
-            setupDone = true;
-
-            if (disableOnStart != null)
-            {
-                for (int i = 0; i < disableOnStart.Length; i++)
-                {
-                    if (disableOnStart[i])
-                        disableOnStart[i].SetActive(false);
-                }
-            }
-
-            LoadOrCreateTerrainLayer();
-
-            if (autoSnapStartPositions && !TryGetComponent(out TerrainStartPositions _))
-                gameObject.AddComponent<TerrainStartPositions>();
-        }
-
-        if (!TerrainStreamingByServer())
-        {
-            lastCenter = WorldToChunk(player.position);
-            hasCenter = true;
-            RebuildChunks(lastCenter);
-        }
-        else if (Mirror.NetworkServer.active)
-        {
-            StreamChunksFromServer();
-        }
-
-        initialized = true;
-        return true;
+        if (!player) return false;
     }
+
+    if (!setupDone)
+    {
+        setupDone = true;
+
+        if (disableOnStart != null)
+        {
+            for (int i = 0; i < disableOnStart.Length; i++)
+            {
+                if (disableOnStart[i])
+                    disableOnStart[i].SetActive(false);
+            }
+        }
+
+        LoadOrCreateTerrainLayer();
+
+        if (autoSnapStartPositions && !TryGetComponent(out TerrainStartPositions _))
+            gameObject.AddComponent<TerrainStartPositions>();
+    }
+
+    // Инициализируем центр мира сразу (для сервера или одиночной игры берем Vector3.zero или позицию генератора)
+    Vector3 centerWorldPos = Vector3.zero;
+    Transform foundPlayer = ResolveLocalPlayer();
+    
+    if (foundPlayer)
+    {
+        player = foundPlayer;
+        centerWorldPos = player.position;
+    }
+
+    lastCenter = WorldToChunk(centerWorldPos);
+    hasCenter = true;
+    RebuildChunks(lastCenter);
+
+    initialized = true;
+    return true;
+}
 
     void LoadOrCreateTerrainLayer()
     {
