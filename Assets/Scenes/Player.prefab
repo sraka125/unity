@@ -664,6 +664,7 @@ MonoBehaviour:
   fallY: -40
   spawnPoint: {fileID: 0}
   searchGroundOnRespawn: 1
+  damageMappings: []
 --- !u!1001 &6355327302018844067
 PrefabInstance:
   m_ObjectHideFlags: 0

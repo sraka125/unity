@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using Mirror;
 using SUPERCharacter;
 using UnityEngine;
@@ -35,6 +36,17 @@ public class PlayerHealth : NetworkBehaviour
     private WorldChunkGenerator chunkGenerator;
     private Coroutine respawnRoutine;
     private bool paused;
+    [Header("Damage by Object Dictionary")]
+    [SerializeField] private List<DamageMapping> damageMappings = new List<DamageMapping>();
+
+    [System.Serializable]
+    public struct DamageMapping
+    {
+        public string objectTag; // Или можно использовать другой ключ (например, имя)
+        public float damageAmount;
+    }
+
+    private Dictionary<string, float> damageDictionary = new Dictionary<string, float>();
 
     void Awake()
     {
@@ -42,6 +54,42 @@ public class PlayerHealth : NetworkBehaviour
         playerBody = GetComponent<Rigidbody>();
         respawn = GetComponent<PlayerRespawn>();
         chunkGenerator = FindFirstObjectByType<WorldChunkGenerator>();
+        // Заполняем словарь из списка для удобной настройки в инспекторе
+        foreach (var mapping in damageMappings)
+        {
+            if (!string.IsNullOrEmpty(mapping.objectTag) && !damageDictionary.ContainsKey(mapping.objectTag))
+            {
+                damageDictionary.Add(mapping.objectTag, mapping.damageAmount);
+            }
+        }
+    }
+
+    void OnCollisionEnter(Collision collision)
+    {
+        // Урон должен обрабатывать только сервер в мультиплеере
+        if (NetGuard.SessionActive && !Mirror.NetworkServer.active)
+            return;
+
+        CheckAndApplyDamage(collision.gameObject);
+    }
+
+    void OnTriggerEnter(Collider other)
+    {
+        if (NetGuard.SessionActive && !Mirror.NetworkServer.active)
+            return;
+
+        CheckAndApplyDamage(other.gameObject);
+    }
+
+    void CheckAndApplyDamage(GameObject hitObject)
+    {
+        // Проверяем по тегу объекта (ключ словаря)
+        string objTag = hitObject.tag;
+
+        if (damageDictionary.TryGetValue(objTag, out float damage))
+        {
+            ApplyDamage(damage);
+        }
     }
 
     void Start()
