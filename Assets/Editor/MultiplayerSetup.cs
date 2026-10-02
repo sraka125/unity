@@ -101,7 +101,6 @@ public static class MultiplayerSetup
         terrainGo.transform.position = Vector3.zero;
 
         NetworkIdentity identity = terrainGo.AddComponent<NetworkIdentity>();
-        TerrainChunkSync sync = terrainGo.AddComponent<TerrainChunkSync>();
         identity.sceneId = 0;
 
         const string folder = "Assets/Prefabs";

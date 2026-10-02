@@ -26,7 +26,7 @@ RenderSettings:
   m_AmbientIntensity: 1
   m_AmbientMode: 0
   m_SubtractiveShadowColor: {r: 0.42, g: 0.478, b: 0.627, a: 1}
-  m_SkyboxMaterial: {fileID: 10304, guid: 0000000000000000f000000000000000, type: 0}
+  m_SkyboxMaterial: {fileID: 2100000, guid: 1cf6f4c6e6e0518419839d3f5448dd99, type: 2}
   m_HaloStrength: 0.5
   m_FlareStrength: 1
   m_FlareFadeSpeed: 3
@@ -758,40 +758,27 @@ MonoBehaviour:
   tablePrefab: {fileID: 8384764855486634466, guid: 755ee32b773522244b5669c29d5ebd96, type: 3}
   ammoPrefab: {fileID: 1000000001, guid: bf23a3937f434277b7965a9e7cb90557, type: 3}
   ammoOnTablePrefab: {fileID: 7400000001, guid: 3801b3a8772a47d8945c94ce9036c9ee, type: 3}
-  terrainChunkPrefab: {fileID: 0}
-  terrainLayer: {fileID: 8574412962073106934, guid: 3297e0586abc43855addbf2701953829, type: 2}
+  blockPrefab: {fileID: 3425335070027867542, guid: a5867f73e7aeaa185a9d6ea47ec7d2ea, type: 3}
+  blockSize: 0.93
+  blocksPerChunkAxis: 16
   disableOnStart:
   - {fileID: 615730089}
   autoSnapStartPositions: 1
-  chunkSize: 50
-  viewRadius: 2
   groundY: -23.44
   seed: 1337
-  heightmapResolution: 129
-  terrainVerticalSize: 24
   noiseScale: 0.02
-  hillStrength: 1
+  maxHeight: 16
   noiseOctaves: 4
   lacunarity: 2
   gain: 0.5
-  ridgeAmount: 0.4
-  smoothingExponent: 1.6
-  generateFallbackTexture: 1
-  terrainColorLow: {r: 0.24, g: 0.32, b: 0.18, a: 1}
-  terrainColorHigh: {r: 0.45, g: 0.47, b: 0.33, a: 1}
-  textureTileSize: 8
   minTables: 1
   maxTables: 3
   edgePadding: 4
   placeAmmoOnTables: 1
   looseAmmoChance: 0.35
   placementAttempts: 32
-  maxGroundSlope: 32
-  slopeSampleRadius: 1
   minTableSpacing: 7
   propSink: 0.03
-  alignToNormal: 0.6
-  sleepPropsOnSpawn: 1
   ammoSurfaceOffset: 0.12
   ammoSpread: 0.4
 --- !u!114 &2200000004
