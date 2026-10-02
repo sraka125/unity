@@ -5,6 +5,7 @@ using UnityEngine;
 public class NetworkShoot : NetworkBehaviour
 {
     [SerializeField] private SimpleShoot gun;
+    [SerializeField] private GameObject bulletPrefab;
     [SerializeField] private bool lockRemotePlayers = true;
 
     public SimpleShoot Gun => gun;
@@ -14,6 +15,17 @@ public class NetworkShoot : NetworkBehaviour
     {
         if (!gun)
             gun = GetComponentInChildren<SimpleShoot>();
+    }
+
+    public GameObject BulletPrefab
+    {
+        get
+        {
+            if (bulletPrefab)
+                return bulletPrefab;
+
+            return gun ? gun.bulletPrefab : null;
+        }
     }
 
     public override void OnStartClient()
@@ -84,6 +96,79 @@ public class NetworkShoot : NetworkBehaviour
     {
         if (gun)
             gun.AddAmmo(amount);
+    }
+
+    public void RequestBulletSpawn(Vector3 position, Quaternion rotation, Vector3 velocity)
+    {
+        if (!Networked)
+        {
+            SpawnBulletLocally(position, rotation, velocity);
+            return;
+        }
+
+        if (!isOwned)
+            return;
+
+        CmdSpawnBullet(position, rotation, velocity);
+    }
+
+    [Command]
+    public void CmdSpawnBullet(Vector3 position, Quaternion rotation, Vector3 velocity)
+    {
+        if (!isOwned)
+            return;
+
+        SpawnBulletOnServer(position, rotation, velocity);
+    }
+
+    void SpawnBulletOnServer(Vector3 position, Quaternion rotation, Vector3 velocity)
+    {
+        GameObject prefab = BulletPrefab;
+
+        if (!prefab || !Mirror.NetworkServer.active)
+            return;
+
+        GameObject instance = Instantiate(prefab, position, rotation);
+        NetworkBullet bullet = instance.GetComponent<NetworkBullet>();
+
+        if (bullet)
+            bullet.IgnoreShooter(gameObject, GetComponent<PlayerHealth>());
+
+        if (bullet)
+            bullet.Launch(velocity);
+        else
+        {
+            Rigidbody body = instance.GetComponent<Rigidbody>();
+
+            if (body)
+                body.linearVelocity = velocity;
+        }
+
+        Mirror.NetworkServer.Spawn(instance);
+    }
+
+    public void SpawnBulletLocally(Vector3 position, Quaternion rotation, Vector3 velocity)
+    {
+        GameObject prefab = BulletPrefab;
+
+        if (!prefab)
+            return;
+
+        GameObject instance = Instantiate(prefab, position, rotation);
+        NetworkBullet bullet = instance.GetComponent<NetworkBullet>();
+
+        if (bullet)
+            bullet.IgnoreShooter(gameObject, GetComponent<PlayerHealth>());
+
+        if (bullet)
+            bullet.Launch(velocity);
+        else
+        {
+            Rigidbody body = instance.GetComponent<Rigidbody>();
+
+            if (body)
+                body.linearVelocity = velocity;
+        }
     }
 
     public static NetworkShoot FindLocal()

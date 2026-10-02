@@ -83,6 +83,10 @@ public class PlayerHealth : NetworkBehaviour
 
     void CheckAndApplyDamage(GameObject hitObject)
     {
+        // Пуля сама наносит урон от своего значения, второй раз считать нельзя.
+        if (hitObject.GetComponentInParent<NetworkBullet>())
+            return;
+
         // Проверяем по тегу объекта (ключ словаря)
         string objTag = hitObject.tag;
 
@@ -232,7 +236,7 @@ public class PlayerHealth : NetworkBehaviour
     {
         yield return new WaitForSeconds(respawnDelay);
 
-        Vector3 point = Object.FindAnyObjectByType<NetworkStartPosition>().transform.position;
+        Vector3 point = GetRespawnPoint();
 
         dead = false;
         SetHealth(MaxHealth);
@@ -266,7 +270,7 @@ public class PlayerHealth : NetworkBehaviour
         else if (respawn)
             point = respawn.CurrentSpawnPosition;
         else
-            point = transform.position + Vector3.up * 2f;
+            point = GetNetworkStartPosition();
 
         if (searchGroundOnRespawn && respawn)
             point = respawn.ResolveSpawnPosition(point);
@@ -274,6 +278,12 @@ public class PlayerHealth : NetworkBehaviour
             point = new Vector3(point.x, chunkGenerator.GetHeightAt(point.x, point.z) + 0.1f, point.z);
 
         return point;
+    }
+
+    Vector3 GetNetworkStartPosition()
+    {
+        NetworkStartPosition start = Object.FindAnyObjectByType<NetworkStartPosition>();
+        return start ? start.transform.position : transform.position + Vector3.up * 2f;
     }
 
     void Teleport(Vector3 point)

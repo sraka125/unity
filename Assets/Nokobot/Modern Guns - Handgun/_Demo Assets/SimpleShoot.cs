@@ -45,6 +45,7 @@ public class SimpleShoot : MonoBehaviour
     private int currentAmmo;
     private int reserveAmmo;
     private float nextShotTime;
+    private NetworkShoot networkSpawner;
 
     public int CurrentAmmo => currentAmmo;
     public int MagazineCapacity => magazineCapacity;
@@ -246,8 +247,10 @@ void Update()
         if (!bulletPrefab)
         { return; }
 
-        // Create a bullet and add force on it in direction of the barrel
-        Instantiate(bulletPrefab, barrelLocation.position, barrelLocation.rotation).GetComponent<Rigidbody>().AddForce(barrelLocation.forward * shotPower);
+        // Create a bullet. In multiplayer the server owns the projectile, otherwise
+        // a locally instantiated bullet has isServer == false and never deals damage.
+        SpawnBullet();
+
         if (shoot)
         {
             AudioSource src = gameObject.AddComponent<AudioSource>();
@@ -282,6 +285,38 @@ void Update()
 
             transform.localRotation = start;
         }
+    }
+
+    void SpawnBullet()
+    {
+        Vector3 position = barrelLocation.position;
+        Quaternion rotation = barrelLocation.rotation;
+        Vector3 velocity = rotation * Vector3.forward * shotPower;
+
+        NetworkShoot spawner = networkSpawner ? networkSpawner : networkSpawner = GetComponentInParent<NetworkShoot>();
+
+        if (spawner)
+        {
+            spawner.RequestBulletSpawn(position, rotation, velocity);
+            return;
+        }
+
+        GameObject bullet = Instantiate(bulletPrefab, position, rotation);
+
+        NetworkBullet bulletBehaviour = bullet.GetComponent<NetworkBullet>();
+
+        if (bulletBehaviour)
+        {
+            Rigidbody owner = GetComponentInParent<Rigidbody>();
+            bulletBehaviour.IgnoreShooter(owner ? owner.gameObject : transform.root.gameObject, null);
+            bulletBehaviour.Launch(velocity);
+            return;
+        }
+
+        Rigidbody bulletBody = bullet.GetComponent<Rigidbody>();
+
+        if (bulletBody)
+            bulletBody.linearVelocity = velocity;
     }
 
     //This function creates a casing at the ejection slot

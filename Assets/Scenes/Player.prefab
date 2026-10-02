@@ -192,6 +192,7 @@ GameObject:
   - component: {fileID: 3850015166741872396}
   - component: {fileID: 1425085841206477715}
   - component: {fileID: 6319826335238241450}
+  - component: {fileID: 7510233874619932201}
   m_Layer: 2
   m_Name: Player
   m_TagString: Untagged
@@ -1212,3 +1213,18 @@ MonoBehaviour:
   rotationSensitivity: 0.01
   positionPrecision: 0.01
   scalePrecision: 0.01
+--- !u!114 &7510233874619932201
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6486296744974608429}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4111695c932e5d4e5963101265d48b41, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  gun: {fileID: 0}
+  bulletPrefab: {fileID: 0}
+  lockRemotePlayers: 1

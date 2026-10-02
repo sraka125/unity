@@ -18,7 +18,6 @@ public class WorldChunkGenerator : MonoBehaviour
 
     [Header("Setup")]
     [SerializeField] private GameObject[] disableOnStart;
-    [SerializeField] private bool autoSnapStartPositions = true;
 
     public event System.Action ChunksRebuilt;
     public Transform LocalPlayer => player;
