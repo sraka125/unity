@@ -10,7 +10,10 @@ public class WorldChunkGenerator : MonoBehaviour
     [SerializeField] private GameObject ammoPrefab;
     [SerializeField] private GameObject ammoOnTablePrefab;
     [SerializeField] private GameObject terrainChunkPrefab;
-    [SerializeField] private TerrainLayer terrainLayer;
+    
+    [Header("Terrain Texturing")]
+    [Tooltip("Имя TerrainLayer в папке Resources (например, 'TerrainLayers/New Terrain Layer'). Решает проблему пропажи текстуры в билде и по сети.")]
+    [SerializeField] private string resourceTerrainLayerPath = "New Terrain Layer";
     [SerializeField] private GameObject[] disableOnStart;
     [SerializeField] private bool autoSnapStartPositions = true;
 
@@ -35,18 +38,12 @@ public class WorldChunkGenerator : MonoBehaviour
     [SerializeField, Range(0f, 1f)] private float ridgeAmount = 0.4f;
     [SerializeField, Range(1f, 6f)] private float smoothingExponent = 1.6f;
 
-    [Header("Terrain Look")]
-    [SerializeField] private bool generateFallbackTexture = true;
-    [SerializeField] private Color terrainColorLow = new Color(0.24f, 0.32f, 0.18f);
-    [SerializeField] private Color terrainColorHigh = new Color(0.45f, 0.47f, 0.33f);
-    [SerializeField] private float textureTileSize = 8f;
-
     [Header("Props Per Chunk")]
     [SerializeField] private int minTables = 1;
     [SerializeField] private int maxTables = 3;
     [SerializeField] private float edgePadding = 4f;
     [SerializeField] private bool placeAmmoOnTables = true;
-    [SerializeField] private float looseAmmoChance = 0.35f;
+    [SerializeField, Range(0f, 1f)] private float looseAmmoChance = 0.35f;
 
     [Header("Ground Placement")]
     [SerializeField] private int placementAttempts = 32;
@@ -65,7 +62,7 @@ public class WorldChunkGenerator : MonoBehaviour
     readonly List<Vector2Int> toRemove = new List<Vector2Int>();
     readonly List<Vector2Int> activeCoords = new List<Vector2Int>();
 
-    TerrainLayer runtimeLayer;
+    TerrainLayer cachedTerrainLayer;
     Texture2D runtimeTexture;
 
     Vector2Int lastCenter;
@@ -145,8 +142,7 @@ public class WorldChunkGenerator : MonoBehaviour
                 }
             }
 
-            if (!terrainLayer && generateFallbackTexture)
-                terrainLayer = CreateFallbackLayer();
+            LoadOrCreateTerrainLayer();
 
             if (autoSnapStartPositions && !TryGetComponent(out TerrainStartPositions _))
                 gameObject.AddComponent<TerrainStartPositions>();
@@ -167,12 +163,66 @@ public class WorldChunkGenerator : MonoBehaviour
         return true;
     }
 
+    void LoadOrCreateTerrainLayer()
+    {
+        // Пытаемся загрузить TerrainLayer из папки Resources, чтобы он гарантированно попал в билд
+        if (!string.IsNullOrEmpty(resourceTerrainLayerPath))
+        {
+            cachedTerrainLayer = Resources.Load<TerrainLayer>(resourceTerrainLayerPath);
+        }
+
+        // Если не нашли по пути, создаем процедурный фоллбек, чтобы террейн не был прозрачным
+        if (!cachedTerrainLayer)
+        {
+            const int size = 256;
+            runtimeTexture = new Texture2D(size, size, TextureFormat.RGB24, true)
+            {
+                name = "GeneratedTerrainTexture",
+                wrapMode = TextureWrapMode.Repeat,
+                filterMode = FilterMode.Bilinear,
+                anisoLevel = 4
+            };
+
+            Color[] pixels = new Color[size * size];
+            Color low = new Color(0.24f, 0.32f, 0.18f);
+            Color high = new Color(0.45f, 0.47f, 0.33f);
+            float offsetX = seed * 0.173f;
+            float offsetZ = seed * 0.419f;
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float u = x / (float)size * 8f;
+                    float v = y / (float)size * 8f;
+                    float detail = Mathf.PerlinNoise(u + offsetX, v + offsetZ);
+                    float grain = Mathf.PerlinNoise(u * 3.7f + offsetZ, v * 3.7f + offsetX);
+                    float t = Mathf.Clamp01(detail * 0.7f + grain * 0.3f);
+                    pixels[y * size + x] = Color.Lerp(low, high, t);
+                }
+            }
+
+            runtimeTexture.SetPixels(pixels);
+            runtimeTexture.Apply(true, false);
+
+            cachedTerrainLayer = new TerrainLayer
+            {
+                name = "GeneratedTerrainLayer",
+                diffuseTexture = runtimeTexture,
+                tileSize = new Vector2(8f, 8f),
+                tileOffset = Vector2.zero,
+                specular = Color.black,
+                metallic = 0f,
+                smoothness = 0f
+            };
+        }
+    }
+
     Transform ResolveLocalPlayer()
     {
         if (NetGuard.SessionActive)
         {
             Mirror.NetworkIdentity local = Mirror.NetworkClient.localPlayer;
-
             if (local)
                 return local.transform;
         }
@@ -249,14 +299,12 @@ public class WorldChunkGenerator : MonoBehaviour
     bool TryResolveServerCenter(out Vector2Int center)
     {
         center = Vector2Int.zero;
-
         Vector3 sum = Vector3.zero;
         int count = 0;
 
         foreach (KeyValuePair<int, Mirror.NetworkConnectionToClient> pair in Mirror.NetworkServer.connections)
         {
             Mirror.NetworkIdentity identity = pair.Value.identity;
-
             if (!identity)
                 continue;
 
@@ -351,19 +399,12 @@ public class WorldChunkGenerator : MonoBehaviour
         return new Vector3(left - right, radius * 2f, back - front).normalized;
     }
 
-    public Vector3 GetTerrainNormalAt(float worldX, float worldZ, float radius)
-    {
-        return GetTerrainNormal(GetTerrainAt(WorldToChunk(new Vector3(worldX, 0f, worldZ))), worldX, worldZ, radius);
-    }
-
     Chunk CreateChunk(Vector2Int coord)
     {
         Vector3 origin = ChunkOrigin(coord);
-
         bool networked = TerrainStreamingByServer() && Mirror.NetworkServer.active;
 
         GameObject root = null;
-
         if (!networked)
         {
             root = new GameObject($"Chunk_{coord.x}_{coord.y}");
@@ -421,8 +462,9 @@ public class WorldChunkGenerator : MonoBehaviour
         data.baseMapResolution = Mathf.Clamp(resolution / 4, 32, 512);
         data.size = new Vector3(chunkSize, terrainVerticalSize, chunkSize);
 
-        if (terrainLayer)
-            data.terrainLayers = new[] { terrainLayer };
+        // Применяем загруженный TerrainLayer, чтобы террейн не был прозрачным
+        if (cachedTerrainLayer)
+            data.terrainLayers = new[] { cachedTerrainLayer };
 
         float[,] heights = new float[resolution, resolution];
 
@@ -463,12 +505,10 @@ public class WorldChunkGenerator : MonoBehaviour
         terrainGo.name = $"Terrain_{coord.x}_{coord.y}";
 
         Terrain terrain = terrainGo.GetComponent<Terrain>();
-
         if (!terrain)
             return null;
 
         Mirror.NetworkIdentity identity = terrainGo.GetComponent<Mirror.NetworkIdentity>();
-
         if (!identity)
             identity = terrainGo.AddComponent<Mirror.NetworkIdentity>();
 
@@ -476,7 +516,6 @@ public class WorldChunkGenerator : MonoBehaviour
             terrain.terrainData = Instantiate(terrain.terrainData);
 
         TerrainChunkSync sync = terrainGo.GetComponent<TerrainChunkSync>();
-
         if (!sync)
             sync = terrainGo.AddComponent<TerrainChunkSync>();
 
@@ -542,77 +581,27 @@ public class WorldChunkGenerator : MonoBehaviour
         return Mathf.Clamp01(shaped * hillStrength);
     }
 
-    TerrainLayer CreateFallbackLayer()
-    {
-        const int size = 256;
-        runtimeTexture = new Texture2D(size, size, TextureFormat.RGB24, true)
-        {
-            name = "GeneratedTerrainTexture",
-            wrapMode = TextureWrapMode.Repeat,
-            filterMode = FilterMode.Bilinear,
-            anisoLevel = 4
-        };
-
-        Color[] pixels = new Color[size * size];
-        float offsetX = seed * 0.173f;
-        float offsetZ = seed * 0.419f;
-
-        for (int y = 0; y < size; y++)
-        {
-            for (int x = 0; x < size; x++)
-            {
-                float u = x / (float)size * 8f;
-                float v = y / (float)size * 8f;
-                float detail = Mathf.PerlinNoise(u + offsetX, v + offsetZ);
-                float grain = Mathf.PerlinNoise(u * 3.7f + offsetZ, v * 3.7f + offsetX);
-                float t = Mathf.Clamp01(detail * 0.7f + grain * 0.3f);
-                pixels[y * size + x] = Color.Lerp(terrainColorLow, terrainColorHigh, t);
-            }
-        }
-
-        runtimeTexture.SetPixels(pixels);
-        runtimeTexture.Apply(true, false);
-
-        runtimeLayer = new TerrainLayer
-        {
-            name = "GeneratedTerrainLayer",
-            diffuseTexture = runtimeTexture,
-            tileSize = new Vector2(textureTileSize, textureTileSize),
-            tileOffset = Vector2.zero,
-            specular = Color.black,
-            metallic = 0f,
-            smoothness = 0f
-        };
-
-        return runtimeLayer;
-    }
-
     void PlaceTableWithAmmo(Chunk chunk, System.Random rng)
     {
-        if (!tablePrefab) { return; }
+        if (!tablePrefab) return;
 
         if (!TryFindGroundSpot(chunk.Origin, chunk, rng, minTableSpacing, out Vector3 pos, out Vector3 normal))
             return;
 
         Quaternion rot = BuildPlacementRotation(normal, (float)rng.NextDouble() * 360f);
-
         GameObject table = SpawnProp(tablePrefab, pos, rot, chunk, "Table", out _);
 
-        if (!table)
-            return;
+        if (!table) return;
 
         if (sleepPropsOnSpawn)
             SleepBody(table);
 
         chunk.Tables.Add(pos);
 
-        if (!placeAmmoOnTables)
-            return;
+        if (!placeAmmoOnTables) return;
 
         GameObject ammoPrefabToUse = ammoOnTablePrefab ? ammoOnTablePrefab : ammoPrefab;
-
-        if (!ammoPrefabToUse)
-            return;
+        if (!ammoPrefabToUse) return;
 
         float topY = GetHighestPoint(table, pos);
         Vector3 ammoPos = new Vector3(
@@ -625,7 +614,7 @@ public class WorldChunkGenerator : MonoBehaviour
 
     void PlaceLooseAmmo(Chunk chunk, System.Random rng)
     {
-        if (!ammoPrefab) { return; }
+        if (!ammoPrefab) return;
 
         if (!TryFindGroundSpot(chunk.Origin, chunk, rng, 1.5f, out Vector3 pos, out _))
             return;
@@ -637,26 +626,21 @@ public class WorldChunkGenerator : MonoBehaviour
     GameObject SpawnProp(GameObject prefab, Vector3 position, Quaternion rotation, Chunk chunk, string propName, out bool spawnedOverNetwork)
     {
         spawnedOverNetwork = false;
-
-        if (!prefab)
-            return null;
+        if (!prefab) return null;
 
         Mirror.NetworkIdentity identity = prefab.GetComponent<Mirror.NetworkIdentity>();
         bool networked = identity != null && NetGuard.SessionActive;
 
         if (networked)
         {
-            if (!Mirror.NetworkServer.active)
-                return null;
+            if (!Mirror.NetworkServer.active) return null;
 
             GameObject netInstance = Instantiate(prefab, position, rotation);
             netInstance.name = propName;
-
             Mirror.NetworkServer.Spawn(netInstance);
 
             chunk.NetProps.Add(netInstance);
             spawnedOverNetwork = true;
-
             return netInstance;
         }
 
@@ -687,7 +671,6 @@ public class WorldChunkGenerator : MonoBehaviour
                 continue;
 
             float height = GetHeightAt(worldX, worldZ);
-
             if (height == float.NegativeInfinity)
                 continue;
 
@@ -731,7 +714,6 @@ public class WorldChunkGenerator : MonoBehaviour
             if (dx * dx + dz * dz < spacing * spacing)
                 return true;
         }
-
         return false;
     }
 
@@ -756,14 +738,12 @@ public class WorldChunkGenerator : MonoBehaviour
             if (renderers[i].bounds.max.y > highest)
                 highest = renderers[i].bounds.max.y;
         }
-
         return highest;
     }
 
     void SleepBody(GameObject instance)
     {
         Rigidbody body = instance.GetComponentInChildren<Rigidbody>();
-
         if (body && !body.isKinematic)
             body.Sleep();
     }
@@ -775,14 +755,12 @@ public class WorldChunkGenerator : MonoBehaviour
             for (int i = 0; i < chunk.NetProps.Count; i++)
             {
                 GameObject netProp = chunk.NetProps[i];
-
                 if (netProp)
                     Mirror.NetworkServer.Destroy(netProp);
             }
         }
 
         chunk.NetProps.Clear();
-
         Terrain terrain = chunk.Terrain;
 
         if (terrain && terrain.terrainData)
@@ -795,6 +773,12 @@ public class WorldChunkGenerator : MonoBehaviour
 
         if (chunk.Root)
             Destroy(chunk.Root);
+    }
+
+    public Vector3 GetTerrainNormalAt(float worldX, float worldZ, float radius)
+    {
+        Terrain terrain = GetTerrainAt(WorldToChunk(new Vector3(worldX, 0f, worldZ)));
+        return GetTerrainNormal(terrain, worldX, worldZ, radius);
     }
 
     int HashCoord(Vector2Int coord)
